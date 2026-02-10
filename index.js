@@ -50,8 +50,11 @@ async function getOrLoadData() {
 
 // Routes
 // Home Page (HTML)
+// Home Page (HTML)
 app.get('/', (req, res) => {
     // No need to await data load here anymore, states are hardcoded
+    res.setHeader('Cache-Control', 'no-store');
+
 
     const html = `
     <!DOCTYPE html>
