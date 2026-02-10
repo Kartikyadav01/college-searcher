@@ -11,34 +11,47 @@ app.use(cors()); // Enable CORS for all routes
 const DATA_URL = 'https://raw.githubusercontent.com/VarthanV/Indian-Colleges-List/master/colleges.json';
 
 let collegesData = [];
-let statesList = [];
+// Hardcoded states list to prevent cold start delays on Home Page
+const statesList = [
+    "Andaman & Nicobar Islands", "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar",
+    "Chandigarh", "Chhattisgarh", "Dadra & Nagar Haveli", "Daman & Diu", "Delhi", "Goa",
+    "Gujarat", "Haryana", "Himachal Pradesh", "Jammu And Kashmir", "Jharkhand", "Karnataka",
+    "Kerala", "Lakshadweep", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya",
+    "Mizoram", "Nagaland", "Odisha", "Puducherry", "Punjab", "Rajasthan", "Sikkim",
+    "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal"
+];
+let dataLoadingPromise = null;
 
-// Fetch Data
-async function loadData() {
+// Fetch Data (Optimized for Serverless)
+async function getOrLoadData() {
+    if (collegesData.length > 0) return; // Data already loaded
+
+    if (dataLoadingPromise) {
+        await dataLoadingPromise;
+        return;
+    }
+
     try {
         console.log(`Fetching data from ${DATA_URL}...`);
-        const response = await axios.get(DATA_URL);
+        dataLoadingPromise = axios.get(DATA_URL);
+        const response = await dataLoadingPromise;
 
         if (Array.isArray(response.data)) {
             collegesData = response.data;
             console.log(`Successfully loaded ${collegesData.length} colleges.`);
-
-            // Extract unique states
-            statesList = [...new Set(collegesData.map(c => c.state).filter(Boolean))].sort();
-            console.log(`Extracted ${statesList.length} unique states.`);
         } else {
             console.error('Data format error: Expected an array.');
         }
     } catch (error) {
         console.error('Error fetching data:', error.message);
+        dataLoadingPromise = null; // Reset promise on error so we can retry
     }
 }
 
 // Routes
 // Home Page (HTML)
 app.get('/', (req, res) => {
-    // Sort states for the dropdown
-    const allStates = statesList;
+    // No need to await data load here anymore, states are hardcoded
 
     const html = `
     <!DOCTYPE html>
@@ -62,7 +75,7 @@ app.get('/', (req, res) => {
             
             <select id="stateSelect">
                 <option value="">Select a State...</option>
-                ${allStates.map(s => `<option value="${s}">${s}</option>`).join('')}
+                ${statesList.map(s => `<option value="${s}">${s}</option>`).join('')}
             </select>
 
             <button class="btn" onclick="goToState()">View Colleges</button>
@@ -85,13 +98,15 @@ app.get('/', (req, res) => {
     res.send(html);
 });
 
-app.get('/states', (req, res) => {
-    if (collegesData.length === 0) return res.status(503).json({ error: 'Data loading...' });
+app.get('/states', async (req, res) => {
+    await getOrLoadData();
+    if (collegesData.length === 0) return res.status(503).json({ error: 'Data loading failed or unavailable.' });
     res.json({ count: statesList.length, states: statesList });
 });
 
 // Get colleges by specific state (Clean URL)
-app.get('/states/:state', (req, res) => {
+app.get('/states/:state', async (req, res) => {
+    await getOrLoadData();
     if (collegesData.length === 0) return res.status(503).json({ error: 'Data loading...' });
 
     const stateName = req.params.state.toLowerCase();
@@ -105,7 +120,8 @@ app.get('/states/:state', (req, res) => {
 });
 
 // HTML View Route (PDF-like list)
-app.get('/view/states/:state', (req, res) => {
+app.get('/view/states/:state', async (req, res) => {
+    await getOrLoadData();
     if (collegesData.length === 0) return res.send('<h1>Data loading... please refresh in a moment.</h1>');
 
     const stateName = req.params.state;
@@ -119,9 +135,6 @@ app.get('/view/states/:state', (req, res) => {
         const engineeringKeywords = /engineering|technology|polytechnic|institute of technology/i;
         results = results.filter(c => c.college && engineeringKeywords.test(c.college));
     }
-
-    // Sort states for the dropdown
-    const allStates = statesList;
 
     const html = `
     <!DOCTYPE html>
@@ -165,7 +178,7 @@ app.get('/view/states/:state', (req, res) => {
                     <label for="stateSelect"><strong>Change State:</strong> </label>
                     <select id="stateSelect" class="state-select" onchange="changeState(this.value)">
                         <option value="">Select a State...</option>
-                        ${allStates.map(s => `<option value="${s}" ${s.toLowerCase() === stateName.toLowerCase() ? 'selected' : ''}>${s}</option>`).join('')}
+                        ${statesList.map(s => `<option value="${s}" ${s.toLowerCase() === stateName.toLowerCase() ? 'selected' : ''}>${s}</option>`).join('')}
                     </select>
                 </div>
             </div>
@@ -226,7 +239,8 @@ app.get('/view/states/:state', (req, res) => {
     res.send(html);
 });
 
-app.get('/colleges', (req, res) => {
+app.get('/colleges', async (req, res) => {
+    await getOrLoadData();
     if (collegesData.length === 0) return res.status(503).json({ error: 'Data loading...' });
 
     let { state, district, search, page = 1, limit = 20 } = req.query;
@@ -266,8 +280,12 @@ app.get('/colleges', (req, res) => {
     });
 });
 
-// Start Server
-app.listen(PORT, () => {
-    console.log(`Server running at http://localhost:${PORT}`);
-    loadData();
-});
+// Start Server Check
+if (require.main === module) {
+    app.listen(PORT, () => {
+        console.log(`Server running at http://localhost:${PORT}`);
+        getOrLoadData();
+    });
+}
+
+module.exports = app;
