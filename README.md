@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Indian Colleges API
 
 A simple local API to get a list of Indian colleges, filterable by state and district.
@@ -49,3 +50,6 @@ Returns a paginated list of colleges.
         `http://localhost:3001/colleges?state=Karnataka`
     -   Search for IITs:
         `http://localhost:3001/colleges?search=IIT`
+=======
+# college-searcher
+>>>>>>> cdf28a1b6f307a0ad5c57c927e722f9b843e12a9
