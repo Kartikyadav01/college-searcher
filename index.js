@@ -35,19 +35,54 @@ async function loadData() {
 }
 
 // Routes
+// Home Page (HTML)
 app.get('/', (req, res) => {
-    res.json({
-        message: 'Indian Colleges API',
-        endpoints: {
-            getAllStates: '/states',
-            getColleges: '/colleges',
-            filterByState: '/colleges?state=Karnataka',
-            filterByDistrict: '/colleges?district=Bangalore',
-            searchByName: '/colleges?search=Engineering'
-        },
-        totalColleges: collegesData.length,
-        status: collegesData.length > 0 ? 'Ready' : 'Loading'
-    });
+    // Sort states for the dropdown
+    const allStates = statesList;
+
+    const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Indian Colleges Search</title>
+        <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f5f5; }
+            .container { text-align: center; background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 500px; width: 90%; }
+            h1 { color: #2c3e50; margin-bottom: 20px; }
+            p { color: #7f8c8d; margin-bottom: 30px; }
+            select { padding: 12px; width: 100%; border-radius: 4px; border: 1px solid #ddd; font-size: 16px; margin-bottom: 20px; }
+            .btn { display: inline-block; padding: 12px 24px; background: #3498db; color: white; text-decoration: none; border-radius: 4px; font-size: 16px; transition: background 0.3s; border: none; cursor: pointer; width: 100%; }
+            .btn:hover { background: #2980b9; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🎓 Indian Colleges Search</h1>
+            <p>Select a state to view the list of colleges.</p>
+            
+            <select id="stateSelect">
+                <option value="">Select a State...</option>
+                ${allStates.map(s => `<option value="${s}">${s}</option>`).join('')}
+            </select>
+
+            <button class="btn" onclick="goToState()">View Colleges</button>
+        </div>
+
+        <script>
+            function goToState() {
+                const state = document.getElementById('stateSelect').value;
+                if (state) {
+                    window.location.href = '/view/states/' + state;
+                } else {
+                    alert('Please select a state first.');
+                }
+            }
+        </script>
+    </body>
+    </html>
+    `;
+
+    res.send(html);
 });
 
 app.get('/states', (req, res) => {
