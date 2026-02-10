@@ -1,0 +1,238 @@
+const express = require('express');
+const axios = require('axios');
+const cors = require('cors');
+
+const app = express();
+const PORT = 3001;
+
+app.use(cors()); // Enable CORS for all routes
+
+// Data Source
+const DATA_URL = 'https://raw.githubusercontent.com/VarthanV/Indian-Colleges-List/master/colleges.json';
+
+let collegesData = [];
+let statesList = [];
+
+// Fetch Data
+async function loadData() {
+    try {
+        console.log(`Fetching data from ${DATA_URL}...`);
+        const response = await axios.get(DATA_URL);
+
+        if (Array.isArray(response.data)) {
+            collegesData = response.data;
+            console.log(`Successfully loaded ${collegesData.length} colleges.`);
+
+            // Extract unique states
+            statesList = [...new Set(collegesData.map(c => c.state).filter(Boolean))].sort();
+            console.log(`Extracted ${statesList.length} unique states.`);
+        } else {
+            console.error('Data format error: Expected an array.');
+        }
+    } catch (error) {
+        console.error('Error fetching data:', error.message);
+    }
+}
+
+// Routes
+app.get('/', (req, res) => {
+    res.json({
+        message: 'Indian Colleges API',
+        endpoints: {
+            getAllStates: '/states',
+            getColleges: '/colleges',
+            filterByState: '/colleges?state=Karnataka',
+            filterByDistrict: '/colleges?district=Bangalore',
+            searchByName: '/colleges?search=Engineering'
+        },
+        totalColleges: collegesData.length,
+        status: collegesData.length > 0 ? 'Ready' : 'Loading'
+    });
+});
+
+app.get('/states', (req, res) => {
+    if (collegesData.length === 0) return res.status(503).json({ error: 'Data loading...' });
+    res.json({ count: statesList.length, states: statesList });
+});
+
+// Get colleges by specific state (Clean URL)
+app.get('/states/:state', (req, res) => {
+    if (collegesData.length === 0) return res.status(503).json({ error: 'Data loading...' });
+
+    const stateName = req.params.state.toLowerCase();
+    const results = collegesData.filter(c => c.state && c.state.toLowerCase() === stateName);
+
+    res.json({
+        state: req.params.state,
+        count: results.length,
+        data: results
+    });
+});
+
+// HTML View Route (PDF-like list)
+app.get('/view/states/:state', (req, res) => {
+    if (collegesData.length === 0) return res.send('<h1>Data loading... please refresh in a moment.</h1>');
+
+    const stateName = req.params.state;
+    // Check for filter
+    const isEngineering = req.query.type === 'engineering';
+
+    let results = collegesData.filter(c => c.state && c.state.toLowerCase() === stateName.toLowerCase());
+
+    if (isEngineering) {
+        // Filter for Engineering / Technology / Polytechnic
+        const engineeringKeywords = /engineering|technology|polytechnic|institute of technology/i;
+        results = results.filter(c => c.college && engineeringKeywords.test(c.college));
+    }
+
+    // Sort states for the dropdown
+    const allStates = statesList;
+
+    const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Colleges in ${stateName}</title>
+        <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; background: #f5f5f5; }
+            .container { max-width: 1000px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            h1 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+            .meta { margin-bottom: 20px; color: #7f8c8d; display: flex; justify-content: space-between; align-items: center; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+            th { background-color: #3498db; color: white; }
+            tr:nth-child(even) { background-color: #f9f9f9; }
+            tr:hover { background-color: #f1f1f1; }
+            .print-btn { padding: 10px 20px; background: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+            .state-select { padding: 8px; border-radius: 4px; border: 1px solid #ddd; font-size: 14px; min-width: 200px; }
+            .filters { margin-top: 10px; display: flex; gap: 10px; align-items: center; }
+            .filter-label { font-weight: bold; color: #555; cursor: pointer; display: flex; align-items: center; gap: 5px; }
+            @media print {
+                body { background: white; padding: 0; }
+                .container { box-shadow: none; max-width: 100%; border-radius: 0; padding: 0; }
+                .print-btn, .state-select-container, .filters { display: none; }
+                h1 { color: black; border-bottom: 1px solid black; }
+                th { background-color: #eee; color: black; border: 1px solid black; }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="state-select-container" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
+                <div class="filters">
+                    <label class="filter-label">
+                        <input type="checkbox" id="engFilter" ${isEngineering ? 'checked' : ''} 
+                        onchange="toggleFilter(this)"> 
+                        Show Only Engineering Colleges
+                    </label>
+                </div>
+                <div>
+                    <label for="stateSelect"><strong>Change State:</strong> </label>
+                    <select id="stateSelect" class="state-select" onchange="changeState(this.value)">
+                        <option value="">Select a State...</option>
+                        ${allStates.map(s => `<option value="${s}" ${s.toLowerCase() === stateName.toLowerCase() ? 'selected' : ''}>${s}</option>`).join('')}
+                    </select>
+                </div>
+            </div>
+
+            <h1>${isEngineering ? 'Engineering ' : ''}Colleges in ${stateName}</h1>
+            
+            <div class="meta">
+                <span>Total Colleges: <strong>${results.length}</strong></span>
+                <button class="print-btn" onclick="window.print()">Save as PDF / Print</button>
+            </div>
+
+            ${results.length === 0 ? '<h3>No colleges found for this filter.</h3>' : `
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 5%">#</th>
+                        <th style="width: 40%">College Name</th>
+                        <th style="width: 25%">District</th>
+                        <th style="width: 30%">University / Type</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${results.map((c, index) => `
+                    <tr>
+                        <td>${index + 1}</td>
+                        <td>${c.college || c.name || 'N/A'}</td>
+                        <td>${c.district || 'N/A'}</td>
+                        <td>${c.university || c.college_type || 'N/A'}</td>
+                    </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+            `}
+        </div>
+
+        <script>
+            function toggleFilter(checkbox) {
+                const url = new URL(window.location.href);
+                if (checkbox.checked) {
+                    url.searchParams.set('type', 'engineering');
+                } else {
+                    url.searchParams.delete('type');
+                }
+                window.location.href = url.toString();
+            }
+
+            function changeState(state) {
+                if (!state) return;
+                const url = new URL(window.location.href);
+                url.pathname = '/view/states/' + state;
+                window.location.href = url.toString();
+            }
+        </script>
+    </body>
+    </html>
+    `;
+
+    res.send(html);
+});
+
+app.get('/colleges', (req, res) => {
+    if (collegesData.length === 0) return res.status(503).json({ error: 'Data loading...' });
+
+    let { state, district, search, page = 1, limit = 20 } = req.query;
+
+    page = parseInt(page);
+    limit = parseInt(limit);
+
+    let results = collegesData;
+
+    // Filter by State
+    if (state) {
+        results = results.filter(c => c.state && c.state.toLowerCase() === state.toLowerCase());
+    }
+
+    // Filter by District
+    if (district) {
+        results = results.filter(c => c.district && c.district.toLowerCase() === district.toLowerCase());
+    }
+
+    // Search by Name (college)
+    if (search) {
+        const query = search.toLowerCase();
+        results = results.filter(c => c.college && c.college.toLowerCase().includes(query));
+    }
+
+    // Pagination
+    const startIndex = (page - 1) * limit;
+    const endIndex = page * limit;
+    const paginatedResults = results.slice(startIndex, endIndex);
+
+    res.json({
+        total: results.length,
+        page,
+        limit,
+        totalPages: Math.ceil(results.length / limit),
+        data: paginatedResults
+    });
+});
+
+// Start Server
+app.listen(PORT, () => {
+    console.log(`Server running at http://localhost:${PORT}`);
+    loadData();
+});
